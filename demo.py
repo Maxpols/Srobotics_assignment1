@@ -1,15 +1,17 @@
+import os.path
+import random
+import librosa
 from autobahn.twisted.component import Component, run
 from twisted.internet.defer import inlineCallbacks
-from autobahn.twisted.util import sleep
-import librosa
-import os.path
-import numpy as np
-import random
 
 
 @inlineCallbacks
-def main(session, details):
-    info = yield session.call("rom.sensor.hearing.info")
+def main(session):
+    """ Main function of our game, the robot will ask the user if he/she is ready to play a game,
+        if yes, the robot will play a note and the user is supposed to guess the note.
+        The user will get a point for each correct answer and at the end of the game the user will be asked
+        if he/she wants to play again. """
+    yield session.call("rom.sensor.hearing.info")
     # setting of standard language to English
     yield session.call("rie.dialogue.config.language", lang="en")
 
@@ -27,7 +29,7 @@ def main(session, details):
         yield session.call("rie.dialogue.say",
                            text="All right, let me play all the notes for you to start with")
         showcase_notes(session)  # Note showcase (duh)
-        correct_answers = main_loop(session)  # enters main game loop
+        correct_answers = yield from main_loop(session)  # enters main game loop
 
         # Give the option to the user to play again:
         question = "You scored: " + str(correct_answers) + ", would you like to play again?"
@@ -44,10 +46,10 @@ def main(session, details):
             main_loop(session)  # run the main loop another 5 times
         elif answer == "No":
             yield session.call("rie.dialogue.say",
-                           text="Oh, well maybe some other time.")
+                               text="Oh, well maybe some other time.")
         else:
             yield session.call("rie.dialogue.say",
-                           text="Sorry, but I didn't hear you properly.")
+                               text="Sorry, but I didn't hear you properly.")
 
     elif answer == "No":
         yield session.call("rie.dialogue.say",
@@ -107,7 +109,7 @@ def main_loop(session):
         else:
             # play a "negative" sound
             if os.path.exists(os.path.abspath("Audio\\negative.mp3")):
-                y, sr = librosa.load("Audio\\" + chr(random_note) + ".wav")
+                y, sr = librosa.load("Audio\\negative.mp3")
                 yield session.call("rom.actuator.audio.play", data=y, rate=sr, sync=True)
 
             # tell the user he/she sadly got it wrong
@@ -118,12 +120,10 @@ def main_loop(session):
 
 
 def correct_answer(session):
-    """ The goal of this function is to avoid code duplication,
-        it is called anytime the user guesses the right note within the main game loop.
-        The robot will congratulate the user with the correct answer and do a little robot dance"""
-    # play a "negative" sound
+    """ Function that plays a positive sound and tells the user that he/she got the note right.
+        The user will also get a point for each correct answer. """
     if os.path.exists(os.path.abspath("Audio\\positive.mp3")):
-        y, sr = librosa.load("Audio\\" + chr(random_note) + ".wav")
+        y, sr = librosa.load("Audio\\positive.mp3")
         yield session.call("rom.actuator.audio.play", data=y, rate=sr, sync=False)
     yield session.call("rie.dialogue.say", text="Good you guessed the note! You get one point.")
     yield session.call("rom.optional.behavior.play", name="BlocklyRobotDance")
@@ -147,10 +147,10 @@ wamp = Component(
         "serializers": ["msgpack"],
         "max_retries": 2
     }],
-    realm="rie.<IP>",
+    realm="rie.6638d58fc887f6d074f04a4f",
 )
 
-wamp.on_join(main)
+wamp.on_join(lambda session, _: main(session))
 
 if __name__ == "__main__":
     run([wamp])
